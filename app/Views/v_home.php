@@ -18,15 +18,15 @@ if (session()->getFlashData('success')) {
                         <div class="col-lg-6">
                             <?= form_open('keranjang') ?>
                                 <?php
-                                echo form_hidden('id', $item['id']);
-                                echo form_hidden('nama', $item['nama']);
-                                echo form_hidden('harga', $item['harga']);
-                                echo form_hidden('foto', $item['foto']);
+                                echo form_hidden('id', (string) $item['id']);
+                                echo form_hidden('nama', (string) $item['nama']);
+                                echo form_hidden('harga', (string) $item['harga']);
+                                echo form_hidden('foto', (string) $item['foto']);
                                 ?>
                                 <div class="card">
                                     <div class="card-body">
                                         <img src="<?= base_url() . "img/" . $item['foto'] ?>" alt="..." width="50%">
-                                        <h5 class="card-title"><?= $item['nama'] ?><br><?php echo number_to_currency($item['harga'], 'IDR') ?><?= $item['harga'] ?></h5>
+                                        <h5 class="card-title"><?= $item['nama'] ?><br><?php echo number_to_currency($item['harga'], 'IDR') ?></h5>
                                         <button type="submit" class="btn btn-info rounded-pill">Beli</button>
                                     </div>
                                 </div>

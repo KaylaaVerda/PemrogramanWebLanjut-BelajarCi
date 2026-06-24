@@ -6,12 +6,13 @@
         <?= form_open('buy', 'class="row g-3"') ?>
 
         <?= form_hidden('username', session()->get('username')) ?>
+        <?= form_hidden('diskon', (string) $diskon) ?>
         
         <?= form_input([
             'type'  => 'hidden',
             'name'  => 'total_harga',
             'id'    => 'total_harga',
-            'value' => ''
+            'value' => (string) $total
         ]) ?>
 
         <div class="col-12">
@@ -87,12 +88,19 @@
                 <tr>
                     <td colspan="2"></td>
                     <td>Subtotal</td>
-                    <td><?= number_to_currency($total, 'IDR') ?></td>
+                    <td><?= number_to_currency($subtotal, 'IDR') ?></td>
                 </tr>
                 <tr>
                     <td colspan="2"></td>
-                    <td>Total</td>
-                    <td><span id="total"><?= number_to_currency($total, 'IDR') ?></span></td>
+                    <td class="text-danger">Diskon</td>
+                    <td class="text-danger">
+                        -<?= number_to_currency($diskon, 'IDR') ?> (<?= $diskon_persen ?>%)
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2"></td>
+                    <td>Grand Total</td>
+                    <td id="total"><?= number_to_currency($total, 'IDR') ?></td>
                 </tr>
             </tbody>
             </table>
@@ -105,20 +113,21 @@
 <script>
 $(document).ready(function() {
     let ongkir = 0;
-    let subtotal = <?= $total ?>;
+    let subtotal = <?= $subtotal ?>;
+    let diskon = <?= $diskon ?>;
     hitungTotal();
 
     function hitungTotal() {
-        let total = subtotal + ongkir;
+        let total = subtotal - diskon + ongkir;
 
         $("#ongkir").val(ongkir);
         $("#total").text(`IDR ${total.toLocaleString('id-ID')}`);
         $("#total_harga").val(total);
     }
 
-	$('#kelurahan').select2({
-	    placeholder: 'Cari daerah tujuan',
-	    minimumInputLength: 3, 
+    $('#kelurahan').select2({
+        placeholder: 'Cari daerah tujuan',
+        minimumInputLength: 3,
         ajax: {
             url: '<?= site_url('ajax/destinations') ?>',
             dataType: 'json',
@@ -133,24 +142,22 @@ $(document).ready(function() {
             },
             cache: true
         }
-	});
+    });
 
     $("#kelurahan").on('change', function () {
         let id_kelurahan = $(this).val();
 
         $("#layanan").empty();
         ongkir = 0;
-        hitungTotal(); 
-
-        console.log(id_kelurahan);
+        hitungTotal();
 
         $.ajax({
-            url: "<?= site_url('ajax/costs') ?>", 
+            url: "<?= site_url('ajax/costs') ?>",
             dataType: "json",
             data: {
                 destination: id_kelurahan
             },
-            success: function (data) { 
+            success: function (data) {
                 data.forEach(function (item) {
                     $("#layanan").append(
                         $('<option>', {
@@ -166,7 +173,7 @@ $(document).ready(function() {
     $("#layanan").on('change', function() {
         ongkir = parseInt($(this).val());
         hitungTotal();
-    }); 
+    });
 });
 </script>
 <?= $this->endSection() ?>

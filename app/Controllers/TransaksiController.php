@@ -17,7 +17,7 @@ class TransaksiController extends BaseController
 
     public function __construct()
         {
-            helper(['number', 'form']);
+            helper(['number', 'form', 'diskon']);
             $this->cart = service('cart');
 
             $this->transactionModel = new TransactionModel();
@@ -56,24 +56,28 @@ class TransaksiController extends BaseController
         } 
 
     public function cart_edit()
-        {
-            $i = 1;
-            foreach ($this->cart->contents() as $item) {
-                $qty = $this->request->getPost('qty' . $i++);
+    {
+        $i = 1;
+        foreach ($this->cart->contents() as $item) {
+            $qty = $this->request->getPost('qty' . $i++);
 
-                $this->cart->update([
-                    'rowid' => $item['rowid'],
-                    'qty'   => $qty
-                ]);
-            }
-
-            session()->setFlashdata(
-                'success',
-                'Keranjang berhasil diperbarui'
-            );
-
-            return redirect()->to(base_url('keranjang'));
+            $this->cart->update([
+                'rowid' => $item['rowid'],
+                'qty'   => $qty
+            ]);
         }
+
+        session()->setFlashdata(
+            'success',
+            'Keranjang berhasil diperbarui'
+        );
+
+        if ($this->request->getPost('action') === 'checkout') {
+            return redirect()->to(base_url('checkout'));
+        }
+
+        return redirect()->to(base_url('keranjang'));
+    }
 
     public function cart_delete($rowid)
         {
@@ -100,20 +104,33 @@ class TransaksiController extends BaseController
         }
 
     public function checkout()
-        {  
-            $service = new RajaOngkirService();
-            $response = $service->getDestination('semarang');
-            $response2 = $service->getCost('64999','65042','1000','jne');
-            
-            $data = [
-                'items' => $this->cart->contents(),
-                'total' => $this->cart->total(),
-                'response' => $response,
-                'response2' => $response2
-            ];
+    {
+        $service = new RajaOngkirService();
+        $response = $service->getDestination('semarang');
+        $response2 = $service->getCost('64999','65042','1000','jne');
 
-            return view('v_checkout', $data);
+        $subtotal = 0;
+        foreach ($this->cart->contents() as $item) {
+            $subtotal += $item['qty'] * $item['price'];
         }
+
+        $diskonData = hitung_diskon($subtotal);
+        $diskon = $diskonData['diskon'];
+        $diskonPersen = $diskonData['persentase'];
+        $total = $subtotal - $diskon;
+
+        $data = [
+            'items'         => $this->cart->contents(),
+            'subtotal'      => $subtotal,
+            'diskon'        => $diskon,
+            'diskon_persen' => $diskonPersen,
+            'total'         => $total,
+            'response'      => $response,
+            'response2'     => $response2
+        ];
+
+        return view('v_checkout', $data);
+    }
 
     public function destinations()
         {
@@ -169,60 +186,62 @@ class TransaksiController extends BaseController
         }
 
     public function buy()
-        { 
-            $cartItems = $this->cart->contents();
+    {
+        $cartItems = $this->cart->contents();
 
-            if (empty($cartItems)) {
-                return redirect()->back();
-            }
-
-            $db = \Config\Database::connect();
-            $db->transStart(); 
-
-            $subtotal = 0;
-            foreach ($cartItems as $item) {
-                $subtotal += $item['qty'] * $item['price'];
-            }
-
-            $ongkir = (int) $this->request->getPost('ongkir');
-
-            $transaction = [
-                'username'    => $this->request->getPost('username'),
-                'alamat'      => $this->request->getPost('alamat'),
-                'ongkir'      => $ongkir,
-                'total_harga' => $subtotal + $ongkir,
-                'status'      => 0, 
-            ];
-
-            // insert transaction
-            if (!$this->transactionModel->insert($transaction)) {
-                $db->transRollback();
-                return redirect()->back()->with('error', 'Gagal membuat transaksi');
-            }
-
-            $transactionId = $this->transactionModel->getInsertID();
-
-            // insert transaction detail
-            foreach ($cartItems as $item) {
-                $this->transactionDetailModel->insert([
-                    'transaction_id' => $transactionId,
-                    'product_id'     => $item['id'],
-                    'jumlah'         => $item['qty'],
-                    'diskon'         => 0,
-                    'subtotal_harga' => $item['qty'] * $item['price'] 
-                ]);
-            }
-
-            $db->transComplete();
-
-            if (!$db->transStatus()) {
-                return redirect()->back()->with('error', 'Gagal membuat transaksi');
-            }
-
-                //hapus session keranjang belanja 
-            $this->cart->destroy();
-            return redirect()->to(base_url());
+        if (empty($cartItems)) {
+            return redirect()->back();
         }
+
+        $db = \Config\Database::connect();
+        $db->transStart();
+
+        $subtotal = 0;
+        foreach ($cartItems as $item) {
+            $subtotal += $item['qty'] * $item['price'];
+        }
+
+        $diskonData = hitung_diskon($subtotal);
+        $diskon = $diskonData['diskon'];
+
+        $ongkir = (int) $this->request->getPost('ongkir');
+        $totalHarga = $subtotal - $diskon + $ongkir;
+
+        $transaction = [
+            'username'    => $this->request->getPost('username'),
+            'alamat'      => $this->request->getPost('alamat'),
+            'ongkir'      => $ongkir,
+            'diskon'      => $diskon,
+            'total_harga' => $totalHarga,
+            'status'      => 0,
+        ];
+
+        if (!$this->transactionModel->insert($transaction)) {
+            $db->transRollback();
+            return redirect()->back()->with('error', 'Gagal membuat transaksi');
+        }
+
+        $transactionId = $this->transactionModel->getInsertID();
+
+        foreach ($cartItems as $item) {
+            $this->transactionDetailModel->insert([
+                'transaction_id' => $transactionId,
+                'product_id'     => $item['id'],
+                'jumlah'         => $item['qty'],
+                'diskon'         => 0,
+                'subtotal_harga' => $item['qty'] * $item['price']
+            ]);
+        }
+
+        $db->transComplete();
+
+        if (!$db->transStatus()) {
+            return redirect()->back()->with('error', 'Gagal membuat transaksi');
+        }
+
+        $this->cart->destroy();
+        return redirect()->to(base_url());
+    }
 
     public function history()
         {
