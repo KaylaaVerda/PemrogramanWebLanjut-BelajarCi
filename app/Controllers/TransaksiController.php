@@ -17,7 +17,7 @@ class TransaksiController extends BaseController
 
     public function __construct()
         {
-            helper(['number', 'form', 'diskon']);
+            helper(['number', 'form', 'diskon', 'transaksi']);
             $this->cart = service('cart');
 
             $this->transactionModel = new TransactionModel();
@@ -114,19 +114,24 @@ class TransaksiController extends BaseController
             $subtotal += $item['qty'] * $item['price'];
         }
 
-        $diskonData = hitung_diskon($subtotal);
-        $diskon = $diskonData['diskon'];
-        $diskonPersen = $diskonData['persentase'];
-        $total = $subtotal - $diskon;
+        $kuponCode = $this->request->getGet('kupon_code');
+        $kuponData = hitung_diskon_kupon($subtotal, $kuponCode);
+        $diskonKupon = $kuponData['diskon'];
+        $biayaAdmin = hitung_biaya_admin($subtotal);
+        $cashback = hitung_cashback($subtotal);
+        $total = ($subtotal - $diskonKupon) + $biayaAdmin + (int) ($response2[0]['cost'] ?? 0);
 
         $data = [
-            'items'         => $this->cart->contents(),
-            'subtotal'      => $subtotal,
-            'diskon'        => $diskon,
-            'diskon_persen' => $diskonPersen,
-            'total'         => $total,
-            'response'      => $response,
-            'response2'     => $response2
+            'items'              => $this->cart->contents(),
+            'subtotal'           => $subtotal,
+            'kupon_code'         => $kuponData['kode'],
+            'kupon_persen'       => $kuponData['persentase'],
+            'diskon_kupon'       => $diskonKupon,
+            'biaya_admin'        => $biayaAdmin,
+            'cashback'           => $cashback,
+            'total'              => $total,
+            'response'           => $response,
+            'response2'          => $response2
         ];
 
         return view('v_checkout', $data);
@@ -201,46 +206,64 @@ class TransaksiController extends BaseController
             $subtotal += $item['qty'] * $item['price'];
         }
 
-        $diskonData = hitung_diskon($subtotal);
-        $diskon = $diskonData['diskon'];
+        $kodeKupon = $this->request->getPost('kupon_code');
+        $kuponData = hitung_diskon_kupon($subtotal, $kodeKupon);
+        $diskonKupon = $kuponData['diskon'];
 
         $ongkir = (int) $this->request->getPost('ongkir');
-        $totalHarga = $subtotal - $diskon + $ongkir;
+        $biayaAdmin = hitung_biaya_admin($subtotal);
+        $cashback = hitung_cashback($subtotal);
+        $totalHarga = ($subtotal - $diskonKupon) + $ongkir + $biayaAdmin;
 
         $transaction = [
-            'username'    => $this->request->getPost('username'),
-            'alamat'      => $this->request->getPost('alamat'),
-            'ongkir'      => $ongkir,
-            'diskon'      => $diskon,
-            'total_harga' => $totalHarga,
-            'status'      => 0,
+            'username'      => $this->request->getPost('username'),
+            'alamat'        => $this->request->getPost('alamat'),
+            'ongkir'        => $ongkir,
+            'biaya_admin'   => $biayaAdmin,
+            'kode_kupon'    => $kuponData['kode'],
+            'diskon_kupon'  => $diskonKupon,
+            'cashback'      => $cashback,
+            'total_harga'   => $totalHarga,
+            'status'        => 0,
         ];
 
         if (!$this->transactionModel->insert($transaction)) {
             $db->transRollback();
+            log_message('error', 'Transaction insert failed: ' . json_encode($this->transactionModel->errors()));
             return redirect()->back()->with('error', 'Gagal membuat transaksi');
         }
 
         $transactionId = $this->transactionModel->getInsertID();
+        if (!$transactionId) {
+            $db->transRollback();
+            log_message('error', 'Transaction insert failed: no insert ID');
+            return redirect()->back()->with('error', 'Gagal membuat transaksi');
+        }
 
         foreach ($cartItems as $item) {
-            $this->transactionDetailModel->insert([
+            if (!$this->transactionDetailModel->insert([
                 'transaction_id' => $transactionId,
                 'product_id'     => $item['id'],
                 'jumlah'         => $item['qty'],
                 'diskon'         => 0,
                 'subtotal_harga' => $item['qty'] * $item['price']
-            ]);
+            ])) {
+                $db->transRollback();
+                log_message('error', 'Transaction detail insert failed: ' . json_encode($this->transactionDetailModel->errors()));
+                return redirect()->back()->with('error', 'Gagal membuat transaksi');
+            }
         }
 
         $db->transComplete();
 
         if (!$db->transStatus()) {
+            log_message('error', 'Database transaction failed to complete.');
             return redirect()->back()->with('error', 'Gagal membuat transaksi');
         }
 
         $this->cart->destroy();
-        return redirect()->to(base_url());
+        session()->setFlashdata('success', 'Pesanan berhasil dibuat.');
+        return redirect()->to(site_url('/'));
     }
 
     public function history()

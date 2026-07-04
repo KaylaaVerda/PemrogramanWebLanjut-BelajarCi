@@ -21,47 +21,51 @@ class RajaOngkirService
     
     public function getDestination(string $keyword): array
     {
-        $response = $this->client->get(
-            $this->baseUrl.'destination/domestic-destination',
-            [
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'key'    => $this->apiKey,
-                ],
-                'query' => [
-                    'search' => $keyword,
-                    'limit'  => 50,
+        try {
+            $response = $this->client->get(
+                $this->baseUrl.'destination/domestic-destination',
+                [
+                    'headers' => [
+                        'Accept' => 'application/json',
+                        'key'    => $this->apiKey,
+                    ],
+                    'query' => [
+                        'search' => $keyword,
+                        'limit'  => 50,
+                    ]
                 ]
-            ]
-        );
+            );
 
-        return json_decode(
-            $response->getBody(),
-            true
-        );
+            return json_decode($response->getBody(), true) ?: ['data' => []];
+        } catch (\Throwable $e) {
+            log_message('error', 'RajaOngkirService::getDestination error: ' . $e->getMessage());
+            return ['data' => []];
+        }
     }
     
     public function getCost(string $origin, string $destination, int $weight, string $courier): array 
     {
-        $response = $this->client->post(
-            $this->baseUrl . 'calculate/domestic-cost',
-            [
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'key'    => $this->apiKey,
-                ],
-                'form_params' => [
-                    'origin'      => $origin,
-                    'destination' => $destination,
-                    'weight'      => $weight,
-                    'courier'     => $courier,
+        try {
+            $response = $this->client->post(
+                $this->baseUrl . 'calculate/domestic-cost',
+                [
+                    'headers' => [
+                        'Accept' => 'application/json',
+                        'key'    => $this->apiKey,
+                    ],
+                    'form_params' => [
+                        'origin'      => $origin,
+                        'destination' => $destination,
+                        'weight'      => $weight,
+                        'courier'     => $courier,
+                    ]
                 ]
-            ]
-        );
+            );
 
-        return json_decode(
-            $response->getBody(),
-            true
-        );
+            return json_decode($response->getBody(), true) ?: ['data' => []];
+        } catch (\Throwable $e) {
+            log_message('error', 'RajaOngkirService::getCost error: ' . $e->getMessage());
+            return ['data' => []];
+        }
     }
 }
